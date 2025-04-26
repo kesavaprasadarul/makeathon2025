@@ -1,10 +1,18 @@
 dev_data
 dev_data*
-
+test_data*
+test_data
+annotation_utils
+Kesava
+checkpoints
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
+pixel_to_geo/dev_data
+pixel_to_geo/test_data
+pixel_to_geo/node*
+
 
 # C extensions
 *.so

@@ -1,0 +1,7 @@
+fastapi[standard]
+rasterio
+opencv-python
+pyproj
+exifread
+rasterio
+python-multipart
