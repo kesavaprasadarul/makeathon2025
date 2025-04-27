@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Upload Folder</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+  <h1>Upload JPEG Folder</h1>
+
+  <form method="POST" enctype="multipart/form-data">
+    <!-- folder picker -->
+    <input id="folder-input" type="file" name="folder_input" webkitdirectory multiple accept=".jpg,.jpeg"><br><br>
+
+    <!-- NEW label field -->
+    <input id="labels-input" type="text" name="labels" placeholder="What are you looking for?  e.g. Crates, Palettes"
+      style="width: 300px;"><br><br>
+
+    <button id="upload-btn" type="submit" disabled>Upload</button>
+  </form>
+
+  <script>
+    const folderInput = document.getElementById('folder-input');
+    const labelsInput = document.getElementById('labels-input');
+    const uploadBtn = document.getElementById('upload-btn');
+
+    function toggleButton() {
+      const folderOK = folderInput.files.length > 0;
+      const labelsOK = labelsInput.value.trim().length > 0;
+
+      if (folderOK && labelsOK) {
+        uploadBtn.disabled = false;
+        uploadBtn.classList.add('enabled');
+      } else {
+        uploadBtn.disabled = true;
+        uploadBtn.classList.remove('enabled');
+      }
+    }
+    folderInput.addEventListener('change', toggleButton);
+    labelsInput.addEventListener('input', toggleButton);
+  </script>
+</body>
+
+</html>

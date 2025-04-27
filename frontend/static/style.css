@@ -1,0 +1,60 @@
+:root {
+    --btn-radius: 8px;
+    /* Active green color: hsl(120, 82.7%, 29.0%) */
+    --btn-active: hsl(120, 82.7%, 29.0%);
+    --btn-disabled: #ccc;
+    --btn-text: #000;
+    --bg-color: #fff;
+  }
+  
+  body {
+    background: var(--bg-color);
+    font-family: Arial, sans-serif;
+    color: var(--btn-text);
+    margin: 0;
+    padding: 20px;
+  }
+  
+  button {
+    border: none;
+    border-radius: var(--btn-radius);
+    padding: 10px 20px;
+    font-size: 1rem;
+    cursor: pointer;
+    color: var(--btn-text);
+    background: var(--btn-disabled);
+  }
+  
+  button.enabled {
+    background: var(--btn-active);
+  }
+  
+  img {
+    max-width: 100%;
+    border-radius: 4px;
+  }
+  
+  .controls {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 10px;
+  }
+  
+  .generate-route {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+  }
+
+    /* slideshow image always fits inside the browser window */
+    #slide-image {
+      max-width: 90vw;
+      /* leave a little room for the side arrows */
+      max-height: 80vh;
+      /* leave header/buttons visible */
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      display: block;
+      margin: 0 auto;
+    }

@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Image Slideshow</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <h1>Slideshow</h1>
+  <div>
+    <button id="prev-btn">&larr; Prev</button>
+    <!-- Clicking the image submits to /segment, invoking Python only -->
+    <form id="segForm" action="{{ url_for('segment') }}" method="post" style="display:inline;">
+      <input type="hidden" name="image" value="{{ images[index] }}">
+      <input type="hidden" name="index" value="{{ index }}">
+      <input type="hidden" name="x" id="xInput">
+      <input type="hidden" name="y" id="yInput">
+      <img id="slide-image" src="{{ overlay_data or url_for('static', filename=images[index]) }}"
+        alt="Slide (click to segment)">
+    </form>
+    <button id="next-btn">Next &rarr;</button>
+  </div>
+  <br>
+  <button id="undo-btn" disabled>Undo Last Step</button>
+
+  <div class="generate-route">
+    <label for="datasource">Data Source:</label>
+    <select id="datasource">
+      <option value="regensburg">Regensburg</option>
+      <option value="munich">Munich</option>
+    </select>
+    <button id="generate-btn">Generate the Route</button>
+  </div>
+
+<script>
+  const images = {{ images | tojson }};
+  let index = {{ index }};
+
+  const slideImg = document.getElementById('slide-image');
+  const prevBtn = document.getElementById('prev-btn');
+  const nextBtn = document.getElementById('next-btn');
+  const undoBtn = document.getElementById('undo-btn');
+
+  const segForm = document.getElementById('segForm');
+  const imgInput = segForm.querySelector('input[name="image"]');
+  const idxInput = segForm.querySelector('input[name="index"]');
+
+  function overlayURL(rel) {
+    return `/overlay?image=${encodeURIComponent(rel)}&_=${Date.now()}`;
+  }
+
+  async function refreshUndoState() {
+    try {
+      const r = await fetch(`/maskcount?image=${encodeURIComponent(images[index])}`);
+      const { count } = await r.json();
+      undoBtn.disabled = count === 0;
+      undoBtn.classList.toggle('enabled', count > 0);
+    } catch { /* ignore – keep previous state */ }
+  }
+
+  function updateImage() {
+    slideImg.src = overlayURL(images[index]);
+    imgInput.value = images[index];
+    idxInput.value = index;
+    refreshUndoState();
+  }
+
+  prevBtn.addEventListener('click', () => {
+    index = (index - 1 + images.length) % images.length;
+    updateImage();
+  });
+
+  nextBtn.addEventListener('click', () => {
+    index = (index + 1) % images.length;
+    updateImage();
+  });
+
+  undoBtn.addEventListener('click', async () => {
+    await fetch('/undo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: images[index] })
+    });
+    updateImage();
+  });
+
+  slideImg.addEventListener('click', e => {
+      const rect = slideImg.getBoundingClientRect();
+      const dx = e.clientX - rect.left;
+      const dy = e.clientY - rect.top;
+
+      const scaleX = slideImg.naturalWidth / slideImg.clientWidth;
+      const scaleY = slideImg.naturalHeight / slideImg.clientHeight;
+
+      document.getElementById('xInput').value = Math.round(dx * scaleX);
+      document.getElementById('yInput').value = Math.round(dy * scaleY);
+
+      segForm.submit();          // posts to /segment
+    });
+  
+     document.getElementById('generate-btn').addEventListener('click', async () => {
+        const datasource = document.getElementById('datasource').value;
+        try {
+          const resp = await fetch('/generate_route', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ datasource_name: datasource })
+          });
+          const data = await resp.json();
+          if (!resp.ok) throw new Error(data.error || 'Unknown error');
+          alert('✅ Route points saved for each masked image.');
+        } catch (err) {
+          alert('❌ Failed to generate route: ' + err.message);
+        }
+      });
+
+  /* ---------- NEW: always initialise the undo state on first paint -------- */
+  refreshUndoState();
+</script>
+
+
+
+</body>
+</html>

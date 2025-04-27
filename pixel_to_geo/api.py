@@ -1,6 +1,8 @@
-from fastapi import FastAPI, UploadFile, File, Form
+from typing import List
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 import numpy as np
+from pydantic import BaseModel
 import rasterio
 import cv2
 from pyproj import Transformer
@@ -25,24 +27,35 @@ class DataSource:
         self.camera_json_path = os.path.join(folderpath, "cameras.json")
         self.coords_path = os.path.join(folderpath, "odm_georeferencing/coords.txt")
         self.dtm_path = os.path.join(folderpath, "odm_dem/dtm.tif")
+        self._dtm_src = rasterio.open(self.dtm_path)
+        self._dtm_arr = self._dtm_src.read(1)
+        self._dtm_bounds = self._dtm_src.bounds  # (minx, miny, maxx, maxy)
     
     def set_images_folder_path(self, images_folder_path):
         self.images_folder_path = images_folder_path
         self.image_paths = [os.path.join(images_folder_path, f) for f in os.listdir(images_folder_path) if f.endswith(('.jpg', '.jpeg', '.png'))]
 
+
+    def sample_elevation(self, x_utm: float, y_utm: float, clamp: bool = True) -> float:
+        minx, miny, maxx, maxy = self._dtm_bounds
+        # clamp or error if outside
+        if not (minx <= x_utm <= maxx and miny <= y_utm <= maxy):
+            if clamp:
+                x_utm = min(max(x_utm, minx), maxx)
+                y_utm = min(max(y_utm, miny), maxy)
+            else:
+                raise HTTPException(400, f"Point ({x_utm:.2f}, {y_utm:.2f}) outside DTM bounds")
+        row, col = self._dtm_src.index(x_utm, y_utm)
+        return float(self._dtm_arr[row, col])
+    
 regensburg = DataSource(name ="regensburg", 
-                        folderpath = "/datasets/nodeodm_out_4",
-                        images_folder_path ="/datasets/images/regensburg")
+                    folderpath = "/datasets/nodeodm_out_4",
+                    images_folder_path ="/datasets/images/regensburg")
 
 munich = DataSource(name ="munich",
                     folderpath = "/datasets/nodeodm_test_1",
                     images_folder_path ="/datasets/images/munich")
 
-def sample_elevation(dtm_path, x_utm, y_utm):
-    with rasterio.open(dtm_path) as src:
-        row, col = src.index(x_utm, y_utm)
-        elev = src.read(1)[row, col]
-    return float(elev)
 
 def load_intrinsics(camera_json_path):
     import json
@@ -147,7 +160,25 @@ def pixel_to_geo_image(datasource: DataSource, image_file_name: str, x: float, y
 
     x_l, y_l, _ = pixel_to_local_xyz(x, y, K, dist, R, t)
     x_utm, y_utm = off_e + x_l, off_n + y_l
-    z_ground = sample_elevation(datasource.dtm_path, x_utm, y_utm)
+    z_ground = datasource.sample_elevation(x_utm, y_utm)
+
+    lam = (z_ground - C[2,0]) / dir_w[2,0]
+    X = C + lam * dir_w
+
+    lat_pt, lon_pt = utm_to_latlon(X[0,0] + off_e, X[1,0] + off_n, zone)
+    return lat_pt, lon_pt, z_ground
+
+def pixel_to_geo_image_fast(x: float, y: float, K, dist, R, t, off_e, off_n, zone, datasource: DataSource):
+    pt = np.array([[[x, y]]], dtype=np.float32)
+    n = cv2.undistortPoints(pt, K, dist, P=np.eye(3))[0][0]
+    norm_x, norm_y = n[0], n[1]
+
+    C = -R.T @ t
+    dir_w = R.T @ np.array([norm_x, norm_y, 1.0]).reshape(3,1)
+
+    x_l, y_l, _ = pixel_to_local_xyz(x, y, K, dist, R, t)
+    x_utm, y_utm = off_e + x_l, off_n + y_l
+    z_ground = datasource.sample_elevation(x_utm, y_utm)
 
     lam = (z_ground - C[2,0]) / dir_w[2,0]
     X = C + lam * dir_w
@@ -193,46 +224,52 @@ async def pixel_to_latlon_api(
         "altitude": z_ground
     })
     
-
-@app.post("/pixel-to-latlon/batch")
-async def pixel_to_latlon_batch_api(
-    imageName: list[str] = Form(...),
-    u: list[str] = Form(...),
-    v: list[str] = Form(...),
-    datasource_name: str = Form(...)
-):
+class PixelToLatLonRequestMulti(BaseModel):
+    imageName: List[str]
+    u: List[float]
+    v: List[float]
+    datasource_name: str
     
-    # Select the data source based on the name provided
-    if datasource_name == "regensburg":
+class PixelToLatLonRequest(BaseModel):
+    imageName: str
+    u: List[float]
+    v: List[float]
+    datasource_name: str
+    
+    
+@app.post("/pixel-to-latlon/batch")
+async def pixel_to_latlon_one_image_many_pixels(request: PixelToLatLonRequestMulti):
+    # request.imageName is a List[str], but we enforce it has exactly one element:
+    if len(request.imageName) != 1:
+        raise HTTPException(400, "This endpoint only accepts exactly one imageName")
+    img = request.imageName[0].strip()
+
+    # pick data source
+    if request.datasource_name == "regensburg":
         datasource = regensburg
-    elif datasource_name == "munich":
+    elif request.datasource_name == "munich":
         datasource = munich
     else:
-        return JSONResponse(content={"error": "Invalid data source name"}, status_code=400)
+        raise HTTPException(400, "Invalid data source name")
 
-    # Check if the image files exist
-    for img in imageName[0].split(","):
-        img = img.strip()
-        image_path = os.path.join(datasource.images_folder_path, img)
-        if not os.path.exists(image_path):
-            return JSONResponse(content={"error": f"Image file {img} not found"}, status_code=404)
+    image_path = os.path.join(datasource.images_folder_path, img)
+    if not os.path.exists(image_path):
+        raise HTTPException(404, f"Image {img} not found")
 
-    #convert u and v to float
-    u = [float(i) for i in u[0].split(",")]
-    v = [float(i) for i in v[0].split(",")]
+    # preload everything once
+    K, dist = load_intrinsics(datasource.camera_json_path)
+    lat0, lon0, alt0, roll, pitch, yaw = load_exif_pose(image_path)
+    off_e, off_n, zone = load_utm_offset(datasource.coords_path)
+    R, t = build_extrinsics(lat0, lon0, alt0, roll, pitch, yaw, zone, off_e, off_n)
 
-    # set imageName to split list
-    imageName = imageName[0].split(",")
-
-    # Process each image to get latitude, longitude, and altitude
     results = []
-    
-    for img, u_val, v_val in zip(imageName, u, v):
-        lat_pt, lon_pt, z_ground = pixel_to_geo_image(
-            datasource,
-            os.path.join(datasource.images_folder_path, img),
-            u_val,
-            v_val
+    # now loop *only* over your pixels
+    for u_val, v_val in zip(request.u, request.v):
+        lat_pt, lon_pt, z_ground = pixel_to_geo_image_fast(
+            u_val, v_val,
+            K, dist, R, t,
+            off_e, off_n, zone,
+            datasource
         )
         results.append({
             "image": img,
@@ -240,38 +277,5 @@ async def pixel_to_latlon_batch_api(
             "longitude": lon_pt,
             "altitude": z_ground
         })
-    
+
     return JSONResponse(content=results)
-    
-
-# async def pixel_to_latlon_api(
-#     image: UploadFile = File(...),
-#     camera_json: UploadFile = File(...),
-#     coords_txt: UploadFile = File(...),
-#     dtm_tif: UploadFile = File(...),
-#     u: float = Form(...),
-#     v: float = Form(...)
-# ):
-#     # Save all uploads to temp files
-#     with tempfile.TemporaryDirectory() as tmpdir:
-#         image_path = os.path.join(tmpdir, image.filename)
-#         camera_json_path = os.path.join(tmpdir, camera_json.filename)
-#         coords_txt_path = os.path.join(tmpdir, coords_txt.filename)
-#         dtm_path = os.path.join(tmpdir, dtm_tif.filename)
-
-#         for file_obj, path in [(image, image_path), (camera_json, camera_json_path), (coords_txt, coords_txt_path), (dtm_tif, dtm_path)]:
-#             with open(path, "wb") as f:
-#                 shutil.copyfileobj(file_obj.file, f)
-
-#         lat_pt, lon_pt, z_ground = pixel_to_geo_image(
-#             DataSource("temp", "1.0"),
-#             image_path,
-#             u,
-#             v
-#         )
-        
-#         return JSONResponse(content={
-#             "latitude": lat_pt,
-#             "longitude": lon_pt,
-#             "altitude": z_ground
-#         })
