@@ -15,6 +15,6 @@
 
 Each folder has their own organizational structure, although fairly straight forward. All services are hosted via CloudFlare, and DockerHub for Image Management. All services are also supported with Swagger OpenAPI support and ReDoc containers. Visit the website (with /docs for swagger) for more API endpoint documentation.
 
-The larger files - original datasets, segmentation models, pre-processed static data, processed drone data, reconstruction models, calibration and error models are present in [In OneDrive](https://1drv.ms/f/c/96185f2c475d5289/Eo9ZhlM2xvtAogXkV7gwnuUBhjPQzpYdKokt3IsP3KGNxg?e=lt3n5L)(deleted in 45 days)
+The larger files - original datasets, segmentation models, pre-processed static data, processed drone data, reconstruction models, calibration and error models are present in [In OneDrive](https://1drv.ms/f/c/96185f2c475d5289/Eo9ZhlM2xvtAogXkV7gwnuUBhjPQzpYdKokt3IsP3KGNxg?e=lt3n5L) (deleted in 45 days)
 
 
