@@ -5,6 +5,7 @@
 ![Architecture](assets/arch.jpg)
 
 ### Developer Notes:
+[Deprecated Notice: This was for a hackathon, so the services may no longer be available online. You could still spin them up by yourself on any AMD64/ARM64 CPU server]
 * The repository consists of several services, as depicted in the picture above.
 * Each service has their own Docker file and are also hosted here:
     * Dataset Engine: [https://dataset.kesava.lol](https://dataset.kesava.lol)
